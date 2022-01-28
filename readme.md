@@ -2,6 +2,11 @@ This module provides the tools to perform a simple "flood control ecosystem-serv
 
 The resulting raster map gives the relative contribution of different parts of a landscape to mitigating flooding from storm run-off. 
 
+The resulting raster is dimensionless, and the value for each pixel represents:
+
+<img src="https://render.githubusercontent.com/render/math?math=\[ \sum_{a=1}^{n} B_a / W_a \]">
+
+Where a is each flood-prone area downstream of the pixel, B is the number of buildings in the pixel (or some weight thereof) and W is the area of the upstream watershed of that pixel.
 
 
 This method was developed by Keri Bryan Watson and is described in Watson, et al (2019), but has not been made available as a single module.
