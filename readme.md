@@ -1,4 +1,5 @@
 This module provides the tools to perform a simple "flood control ecosystem-service demand" calculation for a region. 
+
 The resulting raster map gives the relative contribution of different parts of a landscape to mitigating flooding from storm run-off. 
 
 
@@ -9,7 +10,9 @@ This method was developed by Keri Bryan Watson and is described in Watson, et al
 To execute this method you will need:
 
 A digital elevation model of your area of interest.
+
 A shapefile containing the point locations of structures in your area. This may be obtained from enhanced 911 (E911) databases.
+
 A shapefile of your area containing soils data from the NRCS Soil Survey Geographic Database (SSURGO).
 
 

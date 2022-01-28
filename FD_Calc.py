@@ -86,7 +86,7 @@ def max_rast_value_in_shp(geoms, raster_path, stat = 'max'):
         out_geoms.append(point)
     return out_geoms, meta['crs']
 
-def count_points_in(poly_gdf, pts_gdf, colname = 'all_structures'):
+def count_points_in(poly_gdf, pts_gdf, colname = 'all_struct'):
     '''Count the number of points from points df in each polygon
     in poly_gdf.
     
@@ -162,16 +162,22 @@ class floodDemandCalculator():
         self.unnested_dir = os.path.join(wkdir, 'watershed_rasters')
         self.results_dir = os.path.join(wkdir, 'results')
         
-        for p in [self.wkdir, self.intermed_dir, self.unnested_dir]:
-            if not os.path.exists(wkdir):
-                os.makedirs(wkdir)
+        for p in [self.wkdir, self.intermed_dir, self.unnested_dir,
+                  self.results_dir]:
+            if not os.path.exists(p):
+                os.makedirs(p)
         
         self.fns = {k: os.path.join(self.intermed_dir, f'{k}.tif') 
                for k in ['pit_filled', 'd8_pointer', 'd8_flow_acc']
                }  
         
         self.fns['fld_area_pour_points'] = os.path.join(self.intermed_dir, 'pour_points.shp')
-    
+        self.fns['fld_area_polys'] = os.path.join(self.intermed_dir, 'flood_polys.shp')
+        
+        self.subset_names = None
+        self.crs = None
+        
+        
     def preprocess_rasters(self, dem_path):
         '''Process the digital elevation model to create needed rasters.
         Creates the following files in the directory "intermediate_rasters"
@@ -184,13 +190,14 @@ class floodDemandCalculator():
         
         
         wbt = WhiteboxTools()
+        self.crs = rio.open(dem_path).crs
         wbt.flow_accumulation_full_workflow(dem_path, 
                                             self.fns['pit_filled'],
                                             self.fns['d8_pointer'],
                                             self.fns['d8_flow_acc']
                                        )
     
-    def execute(self, dem_path, soil_map_path, struct_map_path, analysis_subsets = {'all_structures': None},
+    def execute(self, dem_path, soil_map_path, struct_map_path, analysis_subsets = {'all_struct': None},
                 flow_buffer = 50):
         '''Run all processes to create a set of flood control demand rasters.
         
@@ -219,7 +226,7 @@ class floodDemandCalculator():
             you might pass:
                 
             analysis_subsets = 
-            {'all_structures': None # No filter given
+            {'all_struct': None # No filter given
             'schools': {'SITETYPE_M', ['SCHOOL K / 12', 'EDUCATIONAL']
                         }
                            }
@@ -227,7 +234,7 @@ class floodDemandCalculator():
         
         
         self.preprocess_rasters(dem_path)
-        fld_zone = self.preprocess_flood_ares(soil_map_path, struct_map_path, analysis_subsets)
+        fld_zone = self.preprocess_flood_areas(soil_map_path, struct_map_path, analysis_subsets)
         self.delineate_watersheds(fld_zone, flow_buffer)
         self.sum_data(fld_zone, list(analysis_subsets.keys()))
         
@@ -235,7 +242,7 @@ class floodDemandCalculator():
     
     def execute_piecewise(self, wshed_shape, wshed_id_col, dem_path, 
                           soil_map_path, struct_map_path, 
-                          analysis_subsets = {'all_structures': None}, 
+                          analysis_subsets = {'all_struct': None}, 
                           flow_buffer = 50):
         '''
         Execute the flood-demand calculation routine piece by piece by major watershed,
@@ -271,7 +278,7 @@ class floodDemandCalculator():
             you might pass:
                 
             analysis_subsets = 
-            {'all_structures': None # No filter given
+            {'all_struct': None # No filter given
             'schools': {'SITETYPE_M', ['SCHOOL K / 12', 'EDUCATIONAL']
                         }
                            }
@@ -355,7 +362,7 @@ class floodDemandCalculator():
                 
     
     def preprocess_flood_areas(self, soil_map, struct_map, 
-                               analysis_subsets = {'all_structures': None}):
+                               analysis_subsets = {'all_struct': None}):
         '''
         
 
@@ -380,7 +387,7 @@ class floodDemandCalculator():
             one for all structures, and another for just schools,
             you might pass:
             analysis_subsets = 
-            {'all_structures': None # No filter given
+            {'all_struct': None # No filter given
             'schools': {'SITETYPE_M', ['SCHOOL K / 12', 'EDUCATIONAL']
                         }
                            
@@ -407,7 +414,7 @@ class floodDemandCalculator():
                                                'frequent'])]
         del soil_map
         
-        for name, filt in analysis_subsets.keys():
+        for name, filt in analysis_subsets.items():
             if filt:
                 if len(filt>1):
                     sub_structs = gpd.pd.concat(
@@ -421,13 +428,35 @@ class floodDemandCalculator():
                 sub_structs = struct_map
                 
                     
-            fld_zone = count_points_in(fld_zone, struct_map, 
+            fld_zone = count_points_in(fld_zone, sub_structs, 
                                        colname = name)
-            
-        fld_zone = fld_zone[fld_zone[analysis_subsets.keys()].sum()>0]
+        
+        #keep only flood areas with at least one relevant structure
+        
+        
+        to_keep = fld_zone[list(analysis_subsets.keys())].sum(axis =1)>0
+        
+        fld_zone = fld_zone.loc[to_keep]
+        fld_zone.to_file(self.fns['fld_area_polys'])
         return fld_zone
         
-    def delineate_watersheds(self, fld_zone, flow_buffer = 50):
+    
+    def find_pour_points(self, fld_zone = gpd.GeoDataFrame(), flow_buffer = 50):
+        if fld_zone.empty:
+            fld_zone = gpd.read_file(self.fns['fld_area_polys'])
+            
+        fld_zone.geometry, crs = max_rast_value_in_shp(
+            fld_zone.geometry.buffer(flow_buffer), 
+         self.fns['d8_flow_acc'])
+        
+        fld_zone.crs = crs 
+        fld_zone.to_file(self.fns['fld_area_pour_points'])
+        return fld_zone
+        
+    def delineate_watersheds(self, fld_zone = gpd.GeoDataFrame(), flow_buffer = 50):
+        if fld_zone.empty:
+            fld_zone = gpd.read_file(self.fns['fld_area_polys'])
+            
         wbt = WhiteboxTools()
         fld_zone.geometry, crs = max_rast_value_in_shp(
             fld_zone.geometry.buffer(flow_buffer), 
@@ -438,17 +467,33 @@ class floodDemandCalculator():
         fld_zone.to_file(self.fns['fld_area_pour_points'])
         wbt.unnest_basins(self.fns['d8_pointer'],  
                           self.fns['fld_area_pour_points'],
-                          self.unnested_dir)
+                          os.path.join(self.unnested_dir, 
+                                       'unnested_wsheds.tif'))
         
     
-    def sum_data(self, fld_zone = None, subset_names = None):
+    def sum_data(self, fld_zone = None, subset_names = None, crs = None):
+        if self.crs:
+            pass
+        elif crs:
+            self.crs = crs
+        else:
+            try:
+                self.crs = rio.open(self.fns['d8_flow_acc']).crs
+            except:
+                print(
+  '''Warning: Unable to determine the proper coordinate reference system for rasters.
+  Results Rasters will have no CRS. To avoid this, pass the correct crs to this method.
+  
+  ''')
+            
         if not fld_zone:
             fld_zone = gpd.read_file(self.fns['fld_area_pour_points'])
             
         if not subset_names:
             subset_names = self.subset_names
+            
         if not self.subset_names:
-            subset_names = ['all_structures']
+            subset_names = ['all_struct']
         
         fld_zone['wshed_area'] = 0
         for file in os.listdir(self.unnested_dir):
@@ -464,7 +509,7 @@ class floodDemandCalculator():
         
         with rio.open(os.path.join(self.unnested_dir, file)) as src:
             out_meta = src.meta.copy()
-        out_meta.update({'dtype': 'float64'})
+        out_meta.update({'dtype': 'float64'}, crs = crs)
         
         areas = fld_zone['wshed_area'].to_numpy()
         areas = np.append(areas, 1)
@@ -498,5 +543,16 @@ class floodDemandCalculator():
         with rio.open(out_path, 'w+', **out_meta ) as dst:
             dst.write(np.array([out_data]).astype(out_meta['dtype']))
             
-            
+
+if __name__ == '__main__':
+    wkdir = os.path.join('/mnt/c/Users/benja/flood_demand_es/tests')
+    data_dir = os.path.join(wkdir, 'test_data')
+    Calc = floodDemandCalculator(wkdir)
+    dem_path = os.path.join(data_dir, 'dem.tif')
+    soil_map_path = os.path.join(data_dir, 'soil_map.shp')
+    struct_map_path = os.path.join(data_dir, 'structure_map.shp')
+    fld_zone = Calc.preprocess_flood_areas(soil_map_path, struct_map_path)
+    Calc.delineate_watersheds()
+    Calc.sum_data()
+    
         
