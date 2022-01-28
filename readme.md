@@ -33,10 +33,10 @@ The simplest syntax to use is:
 from FD_Calc import FloodDemandCalculator()
 
 FD = FloodDemandCalculator(wkdir)
+
 FD.execute(dem_path, soil_map_path, structure_map_path)  
-
-
-Make sure that all paths passed as arguments to the function are absolute paths.
+\
+All paths passed as arguments to the function must be absolute paths.
 \
 
 ### Credits
