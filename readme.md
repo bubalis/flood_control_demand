@@ -1,4 +1,4 @@
-#Introduction
+### Introduction
 \
 This module provides the tools to perform a simple "flood control ecosystem-service demand" calculation for a region. 
 
@@ -13,7 +13,8 @@ Where a is each flood-prone area downstream of the pixel, B is the number of bui
 
 \
 \
-#Data Needs
+### Data Needs  
+
 To execute this method you will need:
 
 A digital elevation model of your area of interest.
@@ -25,7 +26,7 @@ A shapefile of your area containing soils data from the NRCS Soil Survey Geograp
 \
 \
 
-#Simple Example
+### Simple Example
 \
 The simplest syntax to use is:  
 
@@ -37,7 +38,7 @@ FD.execute(dem_path, soil_map_path, structure_map_path)
 
 Make sure that all paths passed as arguments to the function are absolute paths.
 
-#Credits
+### Credits
 \
 This method was developed by Keri Bryan Watson and is described in Watson, et al (2019), but has not been made available as a single module.  
 
@@ -54,7 +55,7 @@ This work is licensed under a Creative Commons Attribution 3.0 United States Lic
 
 
 
-#References:
+### References:
 Lindsay, J. B. (2014, April). The whitebox geospatial analysis tools project and open-access GIS. In Proceedings of the GIS Research UK 22nd Annual Conference, The University of Glasgow (pp. 16-18).  
 \
 Watson, K. B., Galford, G. L., Sonter, L. J., Koh, I., & Ricketts, T. H. (2019). Effects of human demand on conservation planning for biodiversity and ecosystem services. Conservation Biology, 33(4), 942–952.
