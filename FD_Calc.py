@@ -28,6 +28,13 @@ def cwd(dir_):
         yield 
     finally:
         os.chdir(old_dir)
+        
+        
+def load_if_path(shpfile):
+    if isinstance(shpfile, str):
+        return gpd.read_file(shpfile)
+    else:
+        return shpfile
 
 def max_rast_value_in_shp(geoms, raster_path, stat = 'max'):
     '''Get a list of points representing the location of the maximum values 
@@ -86,7 +93,8 @@ def max_rast_value_in_shp(geoms, raster_path, stat = 'max'):
         out_geoms.append(point)
     return out_geoms, meta['crs']
 
-def count_points_in(poly_gdf, pts_gdf, colname = 'all_struct'):
+
+def count_points_in(poly_gdf, pts_gdf, colname = 'count'):
     '''Count the number of points from points df in each polygon
     in poly_gdf.
     
@@ -109,15 +117,87 @@ def count_points_in(poly_gdf, pts_gdf, colname = 'all_struct'):
     '''
     
     
-    counts = gpd.sjoin(poly_gdf,  pts_gdf[['geometry']],  how = 'left',
-              ).groupby(level = 0)[poly_gdf.columns[0]].count()
+    sindex = pts_gdf.sindex
+    counts = []
     
+    for other in poly_gdf.itertuples():
+        bounds = other.geometry.bounds
+        c = list(sindex.intersection(bounds))
+        possible_matches = pts_gdf.iloc[c]
+        count = possible_matches.intersects(
+            other.geometry).sum()
+        
+        counts.append(count)
     poly_gdf[colname] = counts
+    return poly_gdf
+
+
+
+def count_points_in2(poly_gdf, pts_gdf, colname = 'all_struct'):
+    '''
+    This version is not working with the current
+    
+    Count the number of points from points df in each polygon
+    in poly_gdf.
+    
+
+    Parameters
+    ----------
+    poly_gdf : geodataframe with polygon geometry.
+        
+    pts_gdf : geodataframe with points geometry
+        
+    colname : str 
+    name of the column to add to poly_gdf
+         The default is 'count'.
+
+    Returns
+    -------
+    poly_gdf : TYPE
+        DESCRIPTION.
+
+    '''
+    
+    
+    joined = gpd.sjoin(poly_gdf, pts_gdf['geometry'],  how = 'left',
+              )
+    counts = joined[~joined['index_right'].isna()].groupby(level =0
+                    )[joined.columns[0]].count()
+    
+    poly_gdf[colname] = 0
+    poly_gdf.loc[counts.index, colname] = counts 
+    
     return poly_gdf
 
 
 def sum_pts_weights(poly_gdf, pts_gdf, colname = 'all_struct', 
                     pts_weight_col = 'value'):
+    
+    
+    
+    sindex = pts_gdf.sindex
+    values = []
+    
+    for other in poly_gdf.itertuples():
+        bounds = other.geometry.bounds
+        c = list(sindex.intersection(bounds))
+        possible_matches = pts_gdf.iloc[c]
+        subset = possible_matches[possible_matches.intersects(
+            other.geometry)]
+        value = subset[pts_weight_col].sum()
+        
+        values.append(value)
+        
+    poly_gdf[colname] = values
+    return poly_gdf
+    
+
+def sum_pts_weights2(poly_gdf, pts_gdf, colname = 'all_struct', 
+                    pts_weight_col = 'value'):
+    '''This weighting function is not working with my current
+    version of geopandas.'''
+    
+    
     vals = gpd.sjoin(poly_gdf,  pts_gdf[['geometry', pts_weight_col]],  how = 'left',
               ).groupby(level = 0)[pts_weight_col].sum()
     
@@ -246,7 +326,7 @@ class floodDemandCalculator():
         self.preprocess_rasters(dem_path)
         fld_zone = self.preprocess_flood_areas(soil_map_path, struct_map_path, analysis_subsets)
         self.delineate_watersheds(fld_zone, flow_buffer)
-        self.sum_data(fld_zone, list(analysis_subsets.keys()))
+        self.sum_data(subset_names = list(analysis_subsets.keys()))
         
         
     
@@ -262,49 +342,63 @@ class floodDemandCalculator():
 
         Parameters
         ----------
+        
         wshed_shape : A shapefile or path to one
            watershed delinations to be used in.
+       
         wshed_id_col : str
-            column name for the watershed id. This is used to name the sub-directories
+            column name for the watershed id. 
+            This is used to name the sub-directories
+        
         dem_path : path
-            path to the digital elevation model covering the whole study area
-        soil_map_path : path
-            path to the soil map covering the whole study area
-        struct_map_path : path
-            path to the structure map covering the whole study area.
+        path to the digital elevation model 
+        covering the whole study area
+        
+       soil_map_path : path
+       path to the soil map 
+       covering the whole study area
+   
+       struct_map_path : path
+       path to the structure map 
+       covering the whole study area.
         
         analysis_subsets : Dictionary of Dictionaries., optional
-            Optional parameter for making multiple counts 
-            of different structure types.
+        
+        Optional parameter for making multiple counts 
+        of different structure types.
+        
+        To count a subset of the structures, 
+        pass an additional line to the dictionary: 
+        key: name of field for the counts
+        value: dictionary, k - name of column to filter on
+        
             
-            To count a subset of the structures, 
-            pass an additional line to the dictionary: 
-            key: name of field for the counts
-            value: dictionary, k - name of column to filter on
+        for example, to get two sets of counts, 
+        one for all structures, and another for just schools,
+        you might pass:
             
-                
-            for example, to get two sets of counts, 
-            one for all structures, and another for just schools,
-            you might pass:
-                
-            analysis_subsets = 
-            {'all_struct': None # No filter given
-            'schools': {'SITETYPE_M', ['SCHOOL K / 12', 'EDUCATIONAL']
-                        }
-                           }
+        analysis_subsets = 
+        {'all_struct': None # No filter given
+        'schools': {'SITETYPE_M', ['SCHOOL K / 12', 'EDUCATIONAL']
+                    }
+                       }
             
             
         flow_buffer : TYPE, optional
             DESCRIPTION. The default is 50.
+
 
         Returns
         -------
         None.
 
         '''
+        subset_names = list(analysis_subsets.keys())
+        
+        wshed_shape = load_if_path(wshed_shape)
+        
         wbt = WhiteboxTools()
         for i in wshed_shape.index:
-            
             
             
             row = wshed_shape.loc[i]
@@ -314,8 +408,8 @@ class floodDemandCalculator():
             subFdCalc = floodDemandCalculator(
                 wkdir)
             sub_paths = {
-        k: os.path.join(subFdCalc.intermed_dir, fn) for 
-        k, fn in [('bounds','watershed_bounds.shp'),
+                k: os.path.join(subFdCalc.intermed_dir, fn) for 
+                k, fn in [('bounds','watershed_bounds.shp'),
                    ('dem', 'dem.tif'),
                    ('soil_map', 'soil_map.shp'),
                    ('struct_map', 'struct_map.shp')]
@@ -326,7 +420,7 @@ class floodDemandCalculator():
                 subFdCalc.intermed_dir, 'watershed_bounds.shp')
             
             
-            gpd.GeoDataFrame(row).to_file(
+            gpd.GeoDataFrame([row]).to_file(
                 bounds_path)
             
             wbt.clip_raster_to_polygon(dem_path,
@@ -335,8 +429,9 @@ class floodDemandCalculator():
                                        )
             wbt.clip(soil_map_path, bounds_path, 
                                 sub_paths['soil_map'])
-            wbt.clip(struct_map_path, sub_paths['struct_map'])
-            subFdCalc.execute(self, sub_paths['dem'], 
+            wbt.clip(struct_map_path, bounds_path, sub_paths['struct_map'])
+            
+            subFdCalc.execute(sub_paths['dem'], 
                               sub_paths['soil_map'],
                               sub_paths['struct_map'],
                               analysis_subsets,
@@ -344,9 +439,9 @@ class floodDemandCalculator():
                               )
         
         
-        for name in self.subset_names: #merge remaining rasters
+        for name in subset_names: #merge remaining rasters
             src_to_merge = [rio.open(os.path.join(self.wkdir, 
-                                                  wshed_id,
+                                                  wshed_id, 'results',
                                          f'{name}.tif'))
                             for wshed_id in 
                             wshed_shape[wshed_id_col].unique()
@@ -433,10 +528,9 @@ class floodDemandCalculator():
         '''
         self.subset_names = list(analysis_subsets.keys())
         
-        if isinstance(soil_map, str):
-            soil_map = gpd.read_file(soil_map)
-        if isinstance(struct_map, str):
-            struct_map = gpd.read_file(struct_map)
+        soil_map = load_if_path(soil_map)
+        struct_map = load_if_path(struct_map)
+        
             
             
         struct_map.to_crs(soil_map.crs, inplace = True)
@@ -496,6 +590,9 @@ class floodDemandCalculator():
     
         
     def delineate_watersheds(self, fld_zone = gpd.GeoDataFrame(), flow_buffer = 50):
+        for file in os.listdir(self.unnested_dir):
+            os.remove(os.path.join(self.unnested_dir, file))
+        
         if fld_zone.empty:
             fld_zone = gpd.read_file(self.fns['fld_area_polys'])
             
@@ -514,7 +611,11 @@ class floodDemandCalculator():
         os.chdir(self.wkdir)
         
     
-    def sum_data(self, fld_zone = None, subset_names = None, crs = None):
+    def sum_data(self, fld_zone = gpd.GeoDataFrame(), subset_names = None,
+                 crs = None):
+        
+        
+        
         if self.crs:
             pass
         elif crs:
@@ -529,7 +630,7 @@ class floodDemandCalculator():
   
   ''')
             
-        if not fld_zone:
+        if fld_zone.empty:
             fld_zone = gpd.read_file(self.fns['fld_area_pour_points'])
             
         if not subset_names:
@@ -547,7 +648,7 @@ class floodDemandCalculator():
             counts = np.delete(counts, drop_ind) 
             index = index -1
             fld_zone.loc[
-            index, 'wshed_area'] += counts
+            list(index), 'wshed_area'] += counts
         
         
         with rio.open(os.path.join(self.unnested_dir, file)) as src:
@@ -588,14 +689,22 @@ class floodDemandCalculator():
             
 
 if __name__ == '__main__':
-    wkdir = os.path.join('/mnt/c/Users/benja/flood_demand_es/tests')
+    wkdir = os.path.join(os.getcwd(), 'tests')
     data_dir = os.path.join(wkdir, 'test_data')
     Calc = floodDemandCalculator(wkdir)
     dem_path = os.path.join(data_dir, 'dem.tif')
     soil_map_path = os.path.join(data_dir, 'soil_map.shp')
     struct_map_path = os.path.join(data_dir, 'structure_map.shp')
-    fld_zone = Calc.preprocess_flood_areas(soil_map_path, struct_map_path)
-    Calc.delineate_watersheds()
-    Calc.sum_data()
+    
+    #Calc.execute(dem_path, soil_map_path, struct_map_path)
+    
+    piecewise_wkdir = os.path.join(wkdir, 'piecewise')
+    watersheds_map = os.path.join(data_dir, 'watershed_boundaries.shp')
+    
+    CalcP = floodDemandCalculator(piecewise_wkdir)
+    
+    CalcP.execute_piecewise(watersheds_map, 'mjr_wshed', dem_path, 
+                            soil_map_path, struct_map_path)
+    
     
         
