@@ -11,7 +11,7 @@ The resulting raster is dimensionless, and the value for each pixel represents:
 Where a is each flood-prone area downstream of the pixel, B is the number of buildings in the pixel (or some weight thereof) and W is the area of the upstream watershed of that pixel.  
 
 
-\
+
 \
 ### Data Needs  
 
@@ -24,7 +24,7 @@ A shapefile containing the point locations of structures in your area. This may 
 A shapefile of your area containing soils data from the NRCS Soil Survey Geographic Database (SSURGO).  
 
 \
-\
+
 
 ### Simple Example
 \
@@ -37,6 +37,7 @@ FD.execute(dem_path, soil_map_path, structure_map_path)
 
 
 Make sure that all paths passed as arguments to the function are absolute paths.
+\
 
 ### Credits
 \
