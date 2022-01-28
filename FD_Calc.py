@@ -116,6 +116,15 @@ def count_points_in(poly_gdf, pts_gdf, colname = 'all_struct'):
     return poly_gdf
 
 
+def sum_pts_weights(poly_gdf, pts_gdf, colname = 'all_struct', 
+                    pts_weight_col = 'value'):
+    vals = gpd.sjoin(poly_gdf,  pts_gdf[['geometry', pts_weight_col]],  how = 'left',
+              ).groupby(level = 0)[pts_weight_col].sum()
+    
+    poly_gdf[colname] = vals
+    
+    return poly_gdf
+
 def numpy_replace(input_array, val_array, key_array = None):
     '''
     Replace the values in a numpy array based on the keys and values
@@ -196,6 +205,7 @@ class floodDemandCalculator():
                                             self.fns['d8_pointer'],
                                             self.fns['d8_flow_acc']
                                        )
+        os.chdir(self.wkdir)
     
     def execute(self, dem_path, soil_map_path, struct_map_path, analysis_subsets = {'all_struct': None},
                 flow_buffer = 50):
@@ -362,7 +372,11 @@ class floodDemandCalculator():
                 
     
     def preprocess_flood_areas(self, soil_map, struct_map, 
-                               analysis_subsets = {'all_struct': None}):
+                               analysis_subsets = {'all_struct': None},
+                               area_weights = None,
+                               structure_weights = None
+                               
+                               ):
         '''
         
 
@@ -371,8 +385,10 @@ class floodDemandCalculator():
         soil_map : geodataframe or path to shapefile
             Contains polygons with 
             soil data, including flooding frequency
+            
         struct_map : geodataframe or path to shapefile with points
             contains locations and types of structures. 
+            
         analysis_subsets : dictionary, optional
             Optional parameter for making multiple counts 
             of different structure types.
@@ -392,6 +408,23 @@ class floodDemandCalculator():
                         }
                            
                            }
+            
+        area_weights: string, optional
+        a name of a column in the soil_map gdf that indicates a relative weight for
+        flood risk in each polygon.
+        
+        For instance, you could give an annual exceedence probability, to give
+        higher weight to areas that flood more frequently. 
+        
+        
+        structure_weights: string, optional
+        A name of a column in the struct_map gdf that gives weights for valuing different structures.
+        
+        For instance, if the gdf has a column for the assessed value of buildings, 
+        you could pass the name of this column.
+        
+        Alternately, you could create a column with other value weights to different types of structures.
+        For instance, valuing municipal buildings > residential buildings > commericial buildings.
 
         Returns
         -------
@@ -427,8 +460,12 @@ class floodDemandCalculator():
             else:
                 sub_structs = struct_map
                 
-                    
-            fld_zone = count_points_in(fld_zone, sub_structs, 
+            if structure_weights:
+                fld_zone = sum_pts_weights(fld_zone, sub_structs, 
+                                           name, 
+                                           structure_weights)
+            else:
+                fld_zone = count_points_in(fld_zone, sub_structs, 
                                        colname = name)
         
         #keep only flood areas with at least one relevant structure
@@ -437,6 +474,10 @@ class floodDemandCalculator():
         to_keep = fld_zone[list(analysis_subsets.keys())].sum(axis =1)>0
         
         fld_zone = fld_zone.loc[to_keep]
+        
+        if area_weights:
+            fld_zone[list(analysis_subsets.keys())] *= fld_zone[area_weights]
+        
         fld_zone.to_file(self.fns['fld_area_polys'])
         return fld_zone
         
@@ -452,6 +493,7 @@ class floodDemandCalculator():
         fld_zone.crs = crs 
         fld_zone.to_file(self.fns['fld_area_pour_points'])
         return fld_zone
+    
         
     def delineate_watersheds(self, fld_zone = gpd.GeoDataFrame(), flow_buffer = 50):
         if fld_zone.empty:
@@ -469,6 +511,7 @@ class floodDemandCalculator():
                           self.fns['fld_area_pour_points'],
                           os.path.join(self.unnested_dir, 
                                        'unnested_wsheds.tif'))
+        os.chdir(self.wkdir)
         
     
     def sum_data(self, fld_zone = None, subset_names = None, crs = None):
