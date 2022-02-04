@@ -135,7 +135,7 @@ def count_points_in(poly_gdf, pts_gdf, colname = 'count'):
 
 def count_points_in2(poly_gdf, pts_gdf, colname = 'all_struct'):
     '''
-    This version is not working with the current
+    This version is not working with the current version of geopandas
     
     Count the number of points from points df in each polygon
     in poly_gdf.
@@ -173,7 +173,8 @@ def count_points_in2(poly_gdf, pts_gdf, colname = 'all_struct'):
 def sum_pts_weights(poly_gdf, pts_gdf, colname = 'all_struct', 
                     pts_weight_col = 'value'):
     
-    
+    '''Sum the weighted value of all points in an area. 
+    In this case, this might be the $ Value of the structures vulnerable to flooding.'''
     
     sindex = pts_gdf.sindex
     values = []
@@ -245,7 +246,7 @@ def numpy_replace(input_array, val_array, key_array = None):
 
 class floodDemandCalculator():
     
-    def __init__(self, wkdir):
+    def __init__(self, wkdir = os.getcwd()):
         self.wkdir = wkdir
         self.intermed_dir = os.path.join(wkdir, 'intermediate_data')
         self.unnested_dir = os.path.join(wkdir, 'watershed_rasters')
@@ -267,28 +268,12 @@ class floodDemandCalculator():
         self.crs = None
         
         
-    def preprocess_rasters(self, dem_path):
-        '''Process the digital elevation model to create needed rasters.
-        Creates the following files in the directory "intermediate_rasters"
-        sub-directory:
-        pit_filled.tif - a pit-filled digital elevation model
-        d8_pointer.tif- A Pointer raster designating flow direction for each pixel.
-        d8_flow_acc.tif - A d8 flow accumulation raster.
-        
-        '''
-        
-        
-        wbt = WhiteboxTools()
-        self.crs = rio.open(dem_path).crs
-        wbt.flow_accumulation_full_workflow(dem_path, 
-                                            self.fns['pit_filled'],
-                                            self.fns['d8_pointer'],
-                                            self.fns['d8_flow_acc']
-                                       )
-        os.chdir(self.wkdir)
     
-    def execute(self, dem_path, soil_map_path, struct_map_path, analysis_subsets = {'all_struct': None},
-                flow_buffer = 50):
+    
+    def execute(self, dem_path, flood_map_path, struct_map_path, 
+                analysis_subsets = {'all_struct': None},
+                flow_search_dist = 50, area_weight_col = None,
+                struct_weight_col = None, fld_map_is_SSURGO = True):
         '''Run all processes to create a set of flood control demand rasters.
         
         
@@ -296,7 +281,7 @@ class floodDemandCalculator():
         ----------
         dem_path : path
             path to the digital elevation model covering the whole study area
-        soil_map_path : path
+        flood_map_path : path
             path to the soil map covering the whole study area
         struct_map_path : path
             path to the structure map covering the whole study area.
@@ -320,20 +305,46 @@ class floodDemandCalculator():
             'schools': {'SITETYPE_M', ['SCHOOL K / 12', 'EDUCATIONAL']
                         }
                            }
+            
+        area_weight_col: string, optional.
+        Name of a column in the flood_map_path shapefile used to value flood riks 
+        in different areas differently. 
+        For instance, this could be a flood annual exceedance probability.
+        
+        struct_weight_col: string, optional
+        Name of a column in the struct_map_path shapefile used to value flood risks
+        to different structures differently.
+        For instance, this could be the monetary value of the structures.
+        
+        fld_map_is_SSURGO : bool. Flag for whether the flood map is a SSURGO soils map.
+        Default is True. If you want to use a different map that directly describes
+        flood risk, pass SSURGO = False
+        If using a non-SSURGO flood map, your polygons should only outline areas
+        with a quantifiable risk of inundation flooding. 
         '''
         
         
         self.preprocess_rasters(dem_path)
-        fld_zone = self.preprocess_flood_areas(soil_map_path, struct_map_path, analysis_subsets)
-        self.delineate_watersheds(fld_zone, flow_buffer)
+        fld_zone = self.preprocess_flood_areas(
+                            flood_map_path, struct_map_path, analysis_subsets,
+                            area_weights = area_weight_col,
+                            structure_weights = struct_weight_col,
+                            fld_map_is_SSURGO = fld_map_is_SSURGO
+                            )
+        
+        self.delineate_watersheds(fld_zone, flow_search_dist)
         self.sum_data(subset_names = list(analysis_subsets.keys()))
         
         
     
     def execute_piecewise(self, wshed_shape, wshed_id_col, dem_path, 
-                          soil_map_path, struct_map_path, 
+                          flood_map_path, struct_map_path, 
                           analysis_subsets = {'all_struct': None}, 
-                          flow_buffer = 50):
+                          flow_search_dist = 50, 
+                          area_weight_col = None,
+                          struct_weight_col = None,
+                          fld_map_is_SSURGO =  True
+                          ):
         '''
         Execute the flood-demand calculation routine piece by piece by major watershed,
         then merge into a final raster.
@@ -354,7 +365,7 @@ class floodDemandCalculator():
         path to the digital elevation model 
         covering the whole study area
         
-       soil_map_path : path
+       flood_map_path : path
        path to the soil map 
        covering the whole study area
    
@@ -384,15 +395,33 @@ class floodDemandCalculator():
                        }
             
             
-        flow_buffer : TYPE, optional
+        flow_search_dist : TYPE, optional
             DESCRIPTION. The default is 50.
 
+        
+         area_weight_col: string, optional.
+         Name of a column in the flood_map_path shapefile used to value flood riks 
+         in different areas differently. 
+         For instance, this could be a flood annual exceedance probability.
+         
+         struct_weight_col: string, optional
+         Name of a column in the struct_map_path shapefile used to value flood risks
+         to different structures differently.
+         For instance, this could be the monetary value of the structures.
 
-        Returns
+        
+        fld_map_is_SSURGO : bool. Flag for whether the flood map is a SSURGO soils map.
+        Default is True. If you want to use a different map that directly describes
+        flood risk, pass SSURGO = False
+        If using a non-SSURGO flood map, your polygons should only outline areas
+        with a quantifiable risk of inundation flooding. 
+        
+Returns
         -------
         None.
 
         '''
+        
         subset_names = list(analysis_subsets.keys())
         
         wshed_shape = load_if_path(wshed_shape)
@@ -411,7 +440,7 @@ class floodDemandCalculator():
                 k: os.path.join(subFdCalc.intermed_dir, fn) for 
                 k, fn in [('bounds','watershed_bounds.shp'),
                    ('dem', 'dem.tif'),
-                   ('soil_map', 'soil_map.shp'),
+                   ('fld_map', 'fld_map.shp'),
                    ('struct_map', 'struct_map.shp')]
                         
                                          }
@@ -427,15 +456,17 @@ class floodDemandCalculator():
                                        bounds_path,
                                        sub_paths['dem'],
                                        )
-            wbt.clip(soil_map_path, bounds_path, 
-                                sub_paths['soil_map'])
+            wbt.clip(flood_map_path, bounds_path, 
+                                sub_paths['fld_map'])
             wbt.clip(struct_map_path, bounds_path, sub_paths['struct_map'])
             
             subFdCalc.execute(sub_paths['dem'], 
-                              sub_paths['soil_map'],
+                              sub_paths['fld_map'],
                               sub_paths['struct_map'],
                               analysis_subsets,
-                              flow_buffer
+                              flow_search_dist,
+                              area_weight_col = area_weight_col,
+                              struct_weight_col  = struct_weight_col 
                               )
         
         
@@ -466,18 +497,40 @@ class floodDemandCalculator():
                 
                 
     
-    def preprocess_flood_areas(self, soil_map, struct_map, 
+    def preprocess_rasters(self, dem_path):
+        '''Process the digital elevation model to create needed rasters.
+        Creates the following files in the directory "intermediate_rasters"
+        sub-directory:
+        pit_filled.tif - a pit-filled digital elevation model
+        d8_pointer.tif- A Pointer raster designating flow direction for each pixel.
+        d8_flow_acc.tif - A d8 flow accumulation raster.
+        
+        '''
+        
+        
+        wbt = WhiteboxTools()
+        self.crs = rio.open(dem_path).crs
+        wbt.flow_accumulation_full_workflow(dem_path, 
+                                            self.fns['pit_filled'],
+                                            self.fns['d8_pointer'],
+                                            self.fns['d8_flow_acc']
+                                       )
+        os.chdir(self.wkdir)
+    
+    
+    
+    def preprocess_flood_areas(self, fld_map, struct_map, 
                                analysis_subsets = {'all_struct': None},
                                area_weights = None,
-                               structure_weights = None
-                               
+                               structure_weights = None,
+                               fld_map_is_SSURGO = True
                                ):
         '''
         
 
         Parameters
         ----------
-        soil_map : geodataframe or path to shapefile
+        fld_map : geodataframe or path to shapefile
             Contains polygons with 
             soil data, including flooding frequency
             
@@ -505,7 +558,7 @@ class floodDemandCalculator():
                            }
             
         area_weights: string, optional
-        a name of a column in the soil_map gdf that indicates a relative weight for
+        a name of a column in the fld_map gdf that indicates a relative weight for
         flood risk in each polygon.
         
         For instance, you could give an annual exceedence probability, to give
@@ -521,6 +574,13 @@ class floodDemandCalculator():
         Alternately, you could create a column with other value weights to different types of structures.
         For instance, valuing municipal buildings > residential buildings > commericial buildings.
 
+
+        fld_map_is_SSURGO : bool. Flag for whether the flood map is a SSURGO soils map.
+        Default is True. If you want to use a different map that directly describes
+        flood risk, pass SSURGO = False
+        If using a non-SSURGO flood map, your polygons should only outline areas
+        with a quantifiable risk of inundation flooding. 
+        
         Returns
         -------
         geodataframe of flood zones that have at least one floodable structure.
@@ -528,18 +588,21 @@ class floodDemandCalculator():
         '''
         self.subset_names = list(analysis_subsets.keys())
         
-        soil_map = load_if_path(soil_map)
+        fld_map = load_if_path(fld_map)
         struct_map = load_if_path(struct_map)
         
             
             
-        struct_map.to_crs(soil_map.crs, inplace = True)
-        crs = soil_map.crs
-        fld_zone = soil_map[soil_map['FLOOD'].isin(['water', 
+        struct_map.to_crs(fld_map.crs, inplace = True)
+        crs = fld_map.crs
+        if fld_map_is_SSURGO:
+            fld_zone = fld_map[fld_map['FLOOD'].isin(['water', 
                                                'rare',
                                                'occasional', 
                                                'frequent'])]
-        del soil_map
+            del fld_map
+        else:
+            fld_zone = fld_map
         
         for name, filt in analysis_subsets.items():
             if filt:
@@ -576,12 +639,12 @@ class floodDemandCalculator():
         return fld_zone
         
     
-    def find_pour_points(self, fld_zone = gpd.GeoDataFrame(), flow_buffer = 50):
+    def find_pour_points(self, fld_zone = gpd.GeoDataFrame(), flow_search_dist = 50):
         if fld_zone.empty:
             fld_zone = gpd.read_file(self.fns['fld_area_polys'])
             
         fld_zone.geometry, crs = max_rast_value_in_shp(
-            fld_zone.geometry.buffer(flow_buffer), 
+            fld_zone.geometry.buffer(flow_search_dist), 
          self.fns['d8_flow_acc'])
         
         fld_zone.crs = crs 
@@ -589,7 +652,37 @@ class floodDemandCalculator():
         return fld_zone
     
         
-    def delineate_watersheds(self, fld_zone = gpd.GeoDataFrame(), flow_buffer = 50):
+    def delineate_watersheds(self, fld_zone = gpd.GeoDataFrame(), flow_search_dist = 50):
+        '''Create a set of rasters describing the watersheds of each area labeled
+        at flood risk. 
+        
+        Creates a set of rasters, which in total, describe the watersheds of 
+        each point. These rasters are 1-indexed, rather than zero indexed.
+        
+        The watershed of the 1st (index 0) pour point is all points that have
+        the value 1 in any of the rasters in the directory. 
+        
+        These rasters will appear in the directory:
+            os.path.join(self.wkdir, 'watershed_rasters')
+        
+        This method places a pour-point at the area with the highest flow acccumulation 
+        within a defined distance of each polygon. 
+        
+        Parameters
+        ----------
+        fld_zone: geopandas geodataframe. Optional.
+        gdf containing the flood area polygons. If not passed, will be loaded 
+        from the path:
+            os.path.join(self.wkdir, 'intermediate_data', 'flood_polys.shp')
+        
+        flow_search_dist: numeric, optional.
+        Search distance for finding the highest value of flow accumulation 
+        adjacent to the polygon. Default is 50. 
+        
+        
+        '''
+        
+        
         for file in os.listdir(self.unnested_dir):
             os.remove(os.path.join(self.unnested_dir, file))
         
@@ -598,7 +691,7 @@ class floodDemandCalculator():
             
         wbt = WhiteboxTools()
         fld_zone.geometry, crs = max_rast_value_in_shp(
-            fld_zone.geometry.buffer(flow_buffer), 
+            fld_zone.geometry.buffer(flow_search_dist), 
          self.fns['d8_flow_acc'])
         
         fld_zone.crs = crs 
@@ -613,7 +706,41 @@ class floodDemandCalculator():
     
     def sum_data(self, fld_zone = gpd.GeoDataFrame(), subset_names = None,
                  crs = None):
+        '''
+        Calculate the area of each watershed and the resulting flood demand score
+        for each subset that you chose to calculate.
+        Creates a flood_control_demand value raster for each calculated subset,
+        located in the directory: os.path.join(self.wkdir, 'results')
         
+
+        Parameters
+        ----------
+        fld_zone : TYPE, optional
+            Polygons describing the flood zones. If no gdf is passed,
+            will automatically loaded from  
+            os.path.join(self.wkdir, 'intermediate_data', 'flood_polys.shp')
+         
+        
+        subset_names : List
+        
+        Optional parameter for making multiple counts 
+        of different structure types. Default is to count all subsets defined
+        previously in the full workflow in the function self.preprocess_areas .
+        If this function is called outside of a full workflow, the default is to 
+        summarize the values for "all_structs."
+        
+        Each entry in the list should be the name of a column in the 
+        fld_zone shapefile. 
+        
+        
+        crs : a coordinate reference system for the resulting rasters, optional
+           
+        
+        Returns
+        -------
+        None.
+
+        '''
         
         
         if self.crs:
@@ -639,6 +766,7 @@ class floodDemandCalculator():
         if not self.subset_names:
             subset_names = ['all_struct']
         
+        #summarize the total contributing areas of each watershed.
         fld_zone['wshed_area'] = 0
         for file in os.listdir(self.unnested_dir):
             data = rio.open(os.path.join(self.unnested_dir, file)).read(1)
@@ -655,21 +783,50 @@ class floodDemandCalculator():
             out_meta = src.meta.copy()
         out_meta.update({'dtype': 'float64'}, crs = crs)
         
+        gpd.pd.DataFrame(fld_zone[['wshed_area']]
+                         ).to_csv(os.path.join(self.results_dir, 
+                                               'wshed_areas.csv'
+                                                           ))
+        
         areas = fld_zone['wshed_area'].to_numpy()
         areas = np.append(areas, 1)
+        
         
         index = fld_zone.index.to_numpy()
         index = np.append(index, -32768)
         
         for name in subset_names:
-            self.sum_demand(name, fld_zone, areas, index, 
-                            data.shape, out_meta)
-            
+            struct_vals = fld_zone[name].to_numpy()
+            out_data = self.sum_demand(struct_vals, areas, index, 
+                            data.shape)
+            out_path = os.path.join(self.results_dir, f'{name}.tif')
+            with rio.open(out_path, 'w+', **out_meta ) as dst:
+                dst.write(np.array([out_data]).astype(out_meta['dtype']))
+        
                 
-    def sum_demand(self, name, fld_zone, areas, index, shape,
-                   out_meta):
-        struct_counts = fld_zone[name].to_numpy()
-        struct_counts = np.append(struct_counts, 0)
+    def sum_demand(self, struct_vals, areas, index, shape):
+        '''
+         Summarize demand values for a given named subset.
+
+        Parameters
+        ----------
+        struct_vals: numpy array of structure counts (or values) of each watershed.
+        
+        areas : numpy array with the areas of each watershed.
+            
+        index : A numpy index array.
+        
+        shape : Shape for the resulting raster.
+        
+
+        Returns
+        -------
+        A numpy array with the flood control demand values.
+
+        '''
+        
+
+        struct_vals = np.append(struct_vals, 0)
         
         out_data = np.zeros(shape)
         for file in os.listdir(self.unnested_dir):
@@ -677,15 +834,14 @@ class floodDemandCalculator():
                                          file)).read(1)     
             
             data = np.where(data == -32768, index.shape[0], data)-1 
-            count_weights = numpy_replace(data, struct_counts)
+            count_weights = numpy_replace(data, struct_vals)
             area_weights = numpy_replace(data, areas)
             
             out_data = out_data + count_weights / area_weights
             
-        out_data = out_data * 100
-        out_path = os.path.join(self.results_dir, f'{name}.tif')
-        with rio.open(out_path, 'w+', **out_meta ) as dst:
-            dst.write(np.array([out_data]).astype(out_meta['dtype']))
+        return out_data * 100
+       
+      
             
 
 if __name__ == '__main__':
@@ -696,7 +852,7 @@ if __name__ == '__main__':
     soil_map_path = os.path.join(data_dir, 'soil_map.shp')
     struct_map_path = os.path.join(data_dir, 'structure_map.shp')
     
-    #Calc.execute(dem_path, soil_map_path, struct_map_path)
+    Calc.execute(dem_path, soil_map_path, struct_map_path)
     
     piecewise_wkdir = os.path.join(wkdir, 'piecewise')
     watersheds_map = os.path.join(data_dir, 'watershed_boundaries.shp')
