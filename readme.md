@@ -1,4 +1,4 @@
-### Introduction
+## Introduction
 \
 This module provides the tools to perform a simple "flood control ecosystem-service demand" calculation for a region. 
 
@@ -13,7 +13,7 @@ Where a is each flood-prone area downstream of the pixel, B is the number of bui
 
 
 
-### Data Needs  
+## Data Needs  
 
 To execute this method you will need:
 
@@ -26,7 +26,7 @@ A shapefile of your area containing soils data from the NRCS Soil Survey Geograp
 
 
 
-### Simple Example
+## Simple Example
 
 The simplest syntax to use is:  
 ```
@@ -41,9 +41,9 @@ FD.execute(dem_path, fld_map_path, structure_map_path)
 All paths passed as arguments to the function must be absolute paths.
 
 
-### More complex useage:
+## More complex useage:
 \
-## Running Piecewise:
+### Running Piecewise:
 \
 There are several additional options for using this tool.
 
@@ -61,24 +61,24 @@ FD.execute_piecewise(watersheds_map_path, wshed_id_col, dem_path,
 Make sure that your sub-watersheds aren't connected to one another in any way that is important for flood control. 
 If one delineated sub-watershed is below another, the method won't return accurate results.
 
-## Weighting Structures and Flood-Prone Areas.
+### Weighting Structures and Flood-Prone Areas.
 \
 If you have data in your shapefiles that describes relative risks that different areas will flood, or relative values of structures, you can pass that data to the arguments "area_weight_col" and "struct_weight_col" respectively.
 
 
-## Non-SSURGO Flood Maps
+### Non-SSURGO Flood Maps
 \
 By Default, this package delinates flood-prone areas using a SSURGO soil map. 
 If you have a different map delineating areas at risk of flooding, you can use this, but you must pass "soil_map_is_SSURGO = FALSE" to the execute method.
 
 
-### Installation
+## Installation
 \
 To install, download this repository and run  
 
 ```pip freeze -r requirements.txt ```
 
-### Credits
+## Credits
 \
 This method was developed by Keri Bryan Watson and is described in Watson, et al (2019), but has not been made available as a single module.  
 
@@ -91,7 +91,7 @@ Most geoprocessing operations are carrie out using the WhiteboxTools open-source
 
 
 
-### References:
+## References:
 Lindsay, J. B. (2014, April). The whitebox geospatial analysis tools project and open-access GIS. In Proceedings of the GIS Research UK 22nd Annual Conference, The University of Glasgow (pp. 16-18).  
 \
 Watson, K. B., Galford, G. L., Sonter, L. J., Koh, I., & Ricketts, T. H. (2019). Effects of human demand on conservation planning for biodiversity and ecosystem services. Conservation Biology, 33(4), 942–952.  
