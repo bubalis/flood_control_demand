@@ -12,7 +12,7 @@ Where a is each flood-prone area downstream of the pixel, B is the number of bui
 
 
 
-\
+
 ### Data Needs  
 
 To execute this method you will need:
@@ -23,21 +23,60 @@ A shapefile containing the point locations of structures in your area. This may 
 
 A shapefile of your area containing soils data from the NRCS Soil Survey Geographic Database (SSURGO).  
 
-\
+
 
 
 ### Simple Example
-\
-The simplest syntax to use is:  
 
-from FD_Calc import FloodDemandCalculator()
+The simplest syntax to use is:  
+```
+from FD_Calc import FloodDemandCalculator
 
 FD = FloodDemandCalculator(wkdir)
 
-FD.execute(dem_path, soil_map_path, structure_map_path)  
+FD.execute(dem_path, fld_map_path, structure_map_path)  
+```
+
 \
 All paths passed as arguments to the function must be absolute paths.
+
+
+### More complex useage:
 \
+## Running Piecewise:
+\
+There are several additional options for using this tool.
+
+If you run into memory problems on your machine, you can try executing piecewise.
+This lets you run your calculations one sub-watershed at a time. 
+```
+from FD_Calc import FloodDemandCalculator
+import geopandas as gpd 
+
+FD = FloodDemandCalculator(wkdir)
+
+FD.execute_piecewise(watersheds_map_path, wshed_id_col, dem_path, 
+                            fld_map_path, struct_map_path)
+```
+Make sure that your sub-watersheds aren't connected to one another in any way that is important for flood control. 
+If one delineated sub-watershed is below another, the method won't return accurate results.
+
+## Weighting Structures and Flood-Prone Areas.
+\
+If you have data in your shapefiles that describes relative risks that different areas will flood, or relative values of structures, you can pass that data to the arguments "area_weight_col" and "struct_weight_col" respectively.
+
+
+## Non-SSURGO Flood Maps
+\
+By Default, this package delinates flood-prone areas using a SSURGO soil map. 
+If you have a different map delineating areas at risk of flooding, you can use this, but you must pass "soil_map_is_SSURGO = FALSE" to the execute method.
+
+
+### Installation
+\
+To install, download this repository and run  
+
+```pip freeze -r requirements.txt ```
 
 ### Credits
 \
@@ -45,10 +84,6 @@ This method was developed by Keri Bryan Watson and is described in Watson, et al
 
 Most geoprocessing operations are carrie out using the WhiteboxTools open-source geoprocessing libary (Lindsay, 2014). https://github.com/jblindsay/whitebox-tools
 
-
-
-ⓒ Benjamin Dube.
-This work is licensed under a Creative Commons Attribution 3.0 United States License.  
 
 
 
@@ -59,4 +94,16 @@ This work is licensed under a Creative Commons Attribution 3.0 United States Lic
 ### References:
 Lindsay, J. B. (2014, April). The whitebox geospatial analysis tools project and open-access GIS. In Proceedings of the GIS Research UK 22nd Annual Conference, The University of Glasgow (pp. 16-18).  
 \
-Watson, K. B., Galford, G. L., Sonter, L. J., Koh, I., & Ricketts, T. H. (2019). Effects of human demand on conservation planning for biodiversity and ecosystem services. Conservation Biology, 33(4), 942–952.
+Watson, K. B., Galford, G. L., Sonter, L. J., Koh, I., & Ricketts, T. H. (2019). Effects of human demand on conservation planning for biodiversity and ecosystem services. Conservation Biology, 33(4), 942–952.  
+
+
+
+
+
+
+
+
+ⓒ Benjamin Dube.
+This work is licensed under a Creative Commons Attribution 3.0 United States License.  
+
+
