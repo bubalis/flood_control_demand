@@ -76,7 +76,7 @@ If you have a different map delineating areas at risk of flooding, you can use t
 \
 To install, download this repository and run  
 
-```pip freeze -r requirements.txt ```
+```pip install -r requirements.txt ```
 
 ## Credits
 \
